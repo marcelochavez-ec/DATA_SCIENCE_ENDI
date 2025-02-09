@@ -1,0 +1,86 @@
+---
+title: "Capítulo I"
+author: "Ing. Marcelo Chávez"
+prefer-html: true
+format:
+  html:
+    toc: true
+    minimal: false
+    toc-title: "**CONTENIDOS**"
+    toccolor: green
+    
+    html-math-method: katex
+    documentclass: scrreprt
+    grid:
+      body-width: 2000px
+      sidebar-width: 200px
+      margin-width: 200px
+editor: visual
+---
+
+## Las bases de datos de la ENDI
+
+### Formulario de personas
+
+```{r setup, include=FALSE}
+# Cargar e instalar librerías con pacman
+pacman::p_load(
+  tidyverse,    # Manipulación y visualización de datos
+  DT,           # Tablas interactivas
+  highcharter,  # Gráficos interactivos con Highcharts
+  psych,        # Análisis descriptivo y psicométrico
+  gridExtra,    # Organización de gráficos en grids
+  glue,         # Manipulación de cadenas
+  e1071,        # Funciones estadísticas (p. ej. skewness, SVM)
+  reshape2,     # Transformaciones de datos
+  factoextra,   # Visualización para PCA y clustering
+  FactoMineR,   # Análisis multivariante
+  corrplot,     # Visualización de matrices de correlación
+  knitr,        # Generación de reportes dinámicos
+  RColorBrewer, # Paletas de colores para gráficos
+  srvyr,        # Paquete para Diseño de muestras 
+  RPostgreSQL)
+# Cargar la función desde el script externo
+source("C:/Users/marcelochavez/Documents/DATA_SCIENCE_ENDI/SCRIPTS/FUNCTION_DATATABLE.R")
+```
+
+```{r}
+# Conectar a PostgreSQL
+postgresql_conex <- dbConnect(PostgreSQL(),
+                 dbname = "db_stat",
+                 host = "localhost", 
+                 port = 5432,
+                 user = "postgres",
+                 password = "marce")
+
+# Leer datos desde PostgreSQL
+f1_personas <- dbGetQuery(postgresql_conex, "SELECT * FROM endi.f1_personas")
+
+# Convertir los datos a diseño de encuesta
+f1_survey <- f1_personas %>%
+  as_survey_design(ids = 1, weights = fexp)
+
+# Calcular la prevalencia de desnutrición crónica por provincia
+prevalencia_dci_prov <- f1_survey %>%
+  filter(f1_s1_3_1 < 5) %>%
+  group_by(provincia) %>%
+  summarise(
+    prevalencia = survey_mean(dcronica == 1, na.rm = TRUE),
+    total_dci = round(survey_total(dcronica == 1, na.rm = TRUE), 2),
+    total_ninios = round(survey_total(fexp, na.rm = TRUE), 2)  # Asegurar variable correcta
+  ) %>%
+  arrange(desc(prevalencia))  # Ordenar por prevalencia descendente
+
+# Generar la tabla interactiva
+generar_tabla_dt(
+  data = prevalencia_dci_prov,
+  colnames = c("Provincia", "DCI (%)", "Prevalencia SE", "Total DCI", "Total DCI SE", "Total Niños", "Total Niños SE"),
+  title = "📊 Prevalencia de Desnutrición Crónica Infantil a Nivel Provincial",
+  subtitle = "Fuente: Encuesta Nacional de Desnutrición Infantil (ENDI) - INEC, 2023.",
+  footnote = "Datos oficiales del INEC, procesamiento 2024.",
+  percentage_col = "prevalencia",
+  header_color = "#004488",
+  text_color = "#FFFFFF",
+  border_color = "#CCCCCC",
+  height = 700)
+```
