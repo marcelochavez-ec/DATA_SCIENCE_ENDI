@@ -3,20 +3,79 @@ title: "Capítulo I"
 author: "Ing. Marcelo Chávez"
 prefer-html: true
 format:
-  html:
+  html: 
+    theme: flatly
+    css: styles.css
     toc: true
-    minimal: false
-    toc-title: "**CONTENIDOS**"
-    toccolor: green
-    
-    html-math-method: katex
-    documentclass: scrreprt
-    grid:
-      body-width: 2000px
-      sidebar-width: 200px
-      margin-width: 200px
+
+# Tablas de contenidos ---------------
+toc: true
+toc-title: "Contenido:"
+number-sections: true
+number-depth: 3
+toc-depth: 3
+toc-location: left    # -> Solo en HTML (right, left, body)
+toc-expand: true       # -> Solo en HTML
+smooth-scroll: true    # -> Solo en HTML
+lof: true              # -> Solo en PDF
+lot: true              # -> Solo en PDF
+
+# Fuentes ----------------------------
+mainfont: Verdana
+monofont: Lucida Sans Typewriter
+mathfont: Arial
+fontsize: 10pt
+
+# Colores ---------------------------
+linkcolor: black
+urlcolor: cyan        # -> Solo en PDF
+toccolor: black       # -> Solo en PDF
+
+# Diseño de página -------------------
+geometry: 
+  - a4paper
+  - margin = 1.5in
+  
+# Código (formatos) -------------------
+code-fold: true          # -> Solo HTML
+code-copy: true         # -> Solo HTML
+code-link: true         # -> Solo HTML
+code-tools: false         # -> Solo HTML
+code-line-numbers: true
+code-annotations: true
+code-overflow: scroll
+
+# Figuras y tablas --------------------
+fig-pos: "tb"
+fig-format: png
+fig-align: center          # -> Default
+fig-cap-location: bottom   # -> Default
+tbl-cap-location: top      # -> Default
+fig-responsive: true
+
+# Referencias
+biblio-title: "Bibliografía"
+link-citations: true
+link-bibliography: true
+# cite-method: citeproc        # --> Solo PDF
+# biblio-style: "authoryear"   # --> Solo PDF
+# citations-hover: true
+# bibliography: bibliography.bib
+cls: apa.cls
+
+crossref:
+  fig-title: "Figura"
+  fig-prefix: "Fig."
+  fig-labels: roman
+  lof-title: "Listado de figuras"
+  eq-prefix: "Eq."
+  sec-prefix: "Sec."
+  tbl-prefix: "Tabla"
+
 editor: visual
 ---
+
+# Introducción
 
 ## Las bases de datos de la ENDI
 
@@ -29,19 +88,16 @@ pacman::p_load(
   DT,           # Tablas interactivas
   highcharter,  # Gráficos interactivos con Highcharts
   psych,        # Análisis descriptivo y psicométrico
-  gridExtra,    # Organización de gráficos en grids
   glue,         # Manipulación de cadenas
   e1071,        # Funciones estadísticas (p. ej. skewness, SVM)
   reshape2,     # Transformaciones de datos
-  factoextra,   # Visualización para PCA y clustering
-  FactoMineR,   # Análisis multivariante
-  corrplot,     # Visualización de matrices de correlación
-  knitr,        # Generación de reportes dinámicos
   RColorBrewer, # Paletas de colores para gráficos
   srvyr,        # Paquete para Diseño de muestras 
-  RPostgreSQL)
+  RPostgreSQL,
+  gt,
+  here)
 # Cargar la función desde el script externo
-source("C:/Users/marcelochavez/Documents/DATA_SCIENCE_ENDI/SCRIPTS/FUNCTION_DATATABLE.R")
+source(here("SCRIPTS", "FUNCTION_DATATABLE.R"))
 ```
 
 ```{r}
@@ -56,31 +112,128 @@ postgresql_conex <- dbConnect(PostgreSQL(),
 # Leer datos desde PostgreSQL
 f1_personas <- dbGetQuery(postgresql_conex, "SELECT * FROM endi.f1_personas")
 
-# Convertir los datos a diseño de encuesta
-f1_survey <- f1_personas %>%
-  as_survey_design(ids = 1, weights = fexp)
+# Lectura de la tabla de población menor de 5 años - censo 2022 INEC:
+pob_menor5anios <- dbGetQuery(postgresql_conex, "SELECT * FROM endi.censo_pob2022")
+
+# Crear el objeto de diseño de encuesta
+f1_personas_diseño <- f1_personas %>%
+    as_survey_design(ids = 1, weights = fexp)
 
 # Calcular la prevalencia de desnutrición crónica por provincia
-prevalencia_dci_prov <- f1_survey %>%
-  filter(f1_s1_3_1 < 5) %>%
-  group_by(provincia) %>%
-  summarise(
-    prevalencia = survey_mean(dcronica == 1, na.rm = TRUE),
-    total_dci = round(survey_total(dcronica == 1, na.rm = TRUE), 2),
-    total_ninios = round(survey_total(fexp, na.rm = TRUE), 2)  # Asegurar variable correcta
-  ) %>%
-  arrange(desc(prevalencia))  # Ordenar por prevalencia descendente
+reporte_dci <- f1_personas_diseño %>%
+    filter(f1_s1_3_1 < 5) %>%
+    group_by(prov,provincia) %>%
+    summarise(
+        indicador_dci = survey_mean(dcronica == 1, na.rm = TRUE),  # Indicador de DCI (%)
+        total_con_dci = round(survey_total(dcronica == 1, na.rm = TRUE), 2),  # Total niños con DCI
+        total_ninios = round(survey_total(fexp, na.rm = TRUE), 2),  # Total niños menores de 5 años
+        total_sin_dci = total_ninios - total_con_dci,  # Total niños sin DCI
+        .groups = "drop") %>% 
+    arrange(desc(indicador_dci)) %>% 
+    inner_join(pob_menor5anios, by="prov") %>% 
+    select(-ends_with("_se"), -prov)
 
 # Generar la tabla interactiva
-generar_tabla_dt(
-  data = prevalencia_dci_prov,
-  colnames = c("Provincia", "DCI (%)", "Prevalencia SE", "Total DCI", "Total DCI SE", "Total Niños", "Total Niños SE"),
-  title = "📊 Prevalencia de Desnutrición Crónica Infantil a Nivel Provincial",
-  subtitle = "Fuente: Encuesta Nacional de Desnutrición Infantil (ENDI) - INEC, 2023.",
-  footnote = "Datos oficiales del INEC, procesamiento 2024.",
-  percentage_col = "prevalencia",
-  header_color = "#004488",
-  text_color = "#FFFFFF",
-  border_color = "#CCCCCC",
-  height = 700)
+reporte_dci %>%
+    gt() %>%
+    tab_header(
+        title = md("**Reporte de Desnutrición Crónica Infantil por Provincia**"),
+        subtitle = md("Total de población y DCI en niños menores de 5 años")
+    ) %>%
+    cols_label(
+        provincia = "Provincia",
+        total_ninios = "Niños menores de 5 años - ENDI",
+        total_con_dci = "Niños con DCI - ENDI",
+        total_sin_dci = "Niños sin DCI - ENDI",
+        indicador_dci = "Indicador DCI (%)",
+        pob_menor5anios = "Niños menores de 5 años - CPV2022"
+    ) %>%
+    fmt_number(
+        columns = vars(total_ninios, total_con_dci, total_sin_dci, pob_menor5anios),
+        decimals = 0,
+        sep_mark = "."
+    ) %>%
+    fmt_percent(
+        columns = indicador_dci,
+        decimals = 1
+    ) %>%
+    tab_options(
+        table.font.size = 14,
+        table.border.top.color = "black",
+        table.border.bottom.color = "black",
+        table.border.left.color = "black",
+        table.border.right.color = "black"
+    ) %>%
+    # Añadir iconos de flechas según el valor de DCI
+    text_transform(
+        locations = cells_body(columns = vars(indicador_dci)),
+        fn = function(x) {
+            dplyr::case_when(
+                x >= 23 ~ paste0("↑ ", x),  # Nivel alto (flecha arriba)
+                x < 23 & x > 16 ~ paste0("⇄ ", x),  # Nivel medio (flecha derecha)
+                TRUE ~ paste0("↓ ", x)  # Nivel bajo (flecha abajo)
+            )
+        }
+    ) %>%
+    # Mejorar la apariencia de las celdas de la tabla
+    tab_style(
+        style = list(
+            cell_fill(color = "#f5f5f5"),
+            cell_text(weight = "bold", color = "black")
+        ),
+        locations = cells_column_labels()
+    ) %>%
+    tab_style(
+        style = list(
+            cell_fill(color = "#e0f7fa")
+        ),
+        locations = cells_body(columns = vars(provincia))
+    )
+# generar_tabla_dt(
+#   data = prevalencia_dci_prov,
+#   colnames = c("Provincia", "DCI (%)", "Prevalencia SE", "Total DCI", "Total DCI SE", "Total Niños", "Total Niños SE"),
+#   title = "📊 Prevalencia de Desnutrición Crónica Infantil a Nivel Provincial",
+#   subtitle = "Fuente: Encuesta Nacional de Desnutrición Infantil (ENDI) - INEC, 2023.",
+#   footnote = "Datos oficiales del INEC, procesamiento 2024.",
+#   percentage_col = "prevalencia",
+#   header_color = "#004488",
+#   text_color = "#FFFFFF",
+#   border_color = "#CCCCCC",
+#   height = 700)
 ```
+
+# Explicación por provincia sobre los porcentajes de DCI en niños menores de 5 años (CPV 2022)
+
+-   **Chimborazo (34.1%)**: Presenta el porcentaje más alto de desnutrición crónica infantil, reflejando una grave problemática de acceso a una adecuada alimentación y atención nutricional.\
+-   **Santa Elena (30.0%)**: Alto nivel de DCI, posiblemente asociado a limitaciones en acceso a servicios de salud y alimentación balanceada.\
+-   **Cotopaxi (29.4%)**: Similar a Chimborazo, su alta prevalencia de DCI puede estar relacionada con condiciones socioeconómicas y acceso a recursos básicos.\
+-   **Pastaza (27.4%)**: La desnutrición en esta provincia amazónica podría estar influenciada por barreras geográficas y acceso limitado a servicios de salud.\
+-   **Tungurahua (27.0%)**: A pesar de ser una provincia con desarrollo económico, la DCI sigue siendo un problema, especialmente en zonas rurales.\
+-   **Morona Santiago (27.0%)**: La desnutrición infantil en comunidades amazónicas sigue siendo un desafío por factores socioeconómicos y de acceso.\
+-   **Bolívar (25.4%)**: Provincia con altos niveles de DCI, reflejando desafíos en nutrición y atención infantil.\
+-   **Cañar (23.0%)**: Aunque con un porcentaje menor que otras provincias de la Sierra, la DCI sigue siendo preocupante.\
+-   **Carchi (22.9%)**: La desnutrición en esta provincia puede estar influenciada por factores económicos y disponibilidad de alimentos.\
+-   **Imbabura (21.7%)**: Se mantiene dentro de los niveles medios de DCI, aunque sigue siendo un problema relevante.\
+-   **Pichincha (20.6%)**: A pesar de ser la provincia con mayor desarrollo económico, aún hay sectores vulnerables con DCI.\
+-   **Azuay (20.2%)**: La DCI en esta provincia puede estar relacionada con desigualdades en el acceso a servicios.\
+-   **Orellana (17.6%)**: Menor porcentaje en comparación con otras provincias amazónicas, pero sigue siendo un problema de salud pública.\
+-   **Napo (17.3%)**: Similar a Orellana, con una tasa considerable de DCI en niños menores de 5 años.\
+-   **Loja (16.6%)**: Provincia con menor DCI en la Sierra, aunque la problemática persiste en sectores rurales.\
+-   **Manabí (16.2%)**: En la Costa, esta provincia presenta uno de los niveles más bajos de DCI.\
+-   **Zamora Chinchipe (14.5%)**: La provincia con menor DCI en la Amazonía, posiblemente por mejores condiciones de acceso a alimentos.\
+-   **Guayas (12.7%)**: Aunque tiene una baja prevalencia en comparación con la Sierra, aún existen sectores vulnerables con desnutrición.\
+-   **Esmeraldas (12.4%)**: Similar a Guayas, con una tasa menor de DCI en la Costa.\
+-   **Sucumbíos (11.7%)**: Provincia amazónica con menor prevalencia de DCI en comparación con sus vecinas.\
+-   **Los Ríos (11.5%)**: Presenta uno de los niveles más bajos de DCI en la Costa.\
+-   **Santo Domingo de los Tsáchilas (11.1%)**: Provincia con una de las tasas más bajas de DCI.\
+-   **El Oro (10.1%)**: La provincia con el menor porcentaje de DCI en el país, posiblemente debido a una mejor alimentación y acceso a servicios de salud.
+
+Este análisis revela que las provincias de la **Sierra Central y la Amazonía** presentan los niveles más altos de desnutrición crónica infantil (DCI), lo que indica que estos territorios enfrentan desafíos estructurales en términos de acceso a servicios de salud, seguridad alimentaria y condiciones socioeconómicas. La presencia de comunidades indígenas en estas zonas también juega un papel clave, ya que históricamente han enfrentado desigualdades en la provisión de servicios básicos y políticas de desarrollo específicas. En particular, provincias como **Chimborazo, Cotopaxi y Bolívar** han registrado históricamente cifras alarmantes de DCI, reflejando la persistencia del problema a lo largo del tiempo.
+
+A nivel **nacional**, la desnutrición crónica infantil sigue siendo un problema prioritario en Ecuador. A pesar de los esfuerzos gubernamentales y de organizaciones internacionales para reducir estos índices, los datos reflejan que aún persisten brechas significativas en las políticas de alimentación y salud infantil. Factores como la pobreza, el acceso limitado a agua potable y saneamiento, y la falta de educación nutricional en los hogares continúan incidiendo en los altos niveles de DCI. Además, los efectos de la crisis económica y la pandemia de COVID-19 han exacerbado las dificultades para mejorar los indicadores de nutrición infantil en el país.
+
+Desde una perspectiva **regional**, Ecuador no es un caso aislado. Países vecinos como **Perú y Bolivia** también han registrado históricamente altos niveles de DCI, especialmente en sus regiones andinas y rurales. Sin embargo, experiencias exitosas en estos países han demostrado que programas de intervención focalizada, como transferencias condicionadas de dinero, campañas de educación nutricional y la promoción de la lactancia materna exclusiva, pueden reducir significativamente la DCI. Ecuador podría beneficiarse de estas experiencias mediante la implementación de políticas más integrales y sostenibles.
+
+En contraste, las provincias de la **Costa**, como **Guayas, Manabí y Esmeraldas**, presentan niveles más bajos de DCI en comparación con la Sierra y la Amazonía. Esto podría explicarse por una mayor disponibilidad de alimentos debido a la producción agrícola y pesquera, así como un acceso relativamente mejor a los mercados y centros urbanos con infraestructura hospitalaria más desarrollada. No obstante, en estas provincias todavía existen sectores vulnerables, especialmente en comunidades rurales y barrios marginales de las grandes ciudades, donde la pobreza y la inseguridad alimentaria continúan siendo problemáticas latentes.
+
+Para abordar este desafío, es crucial que Ecuador fortalezca sus estrategias de intervención mediante un enfoque intersectorial que involucre a ministerios, gobiernos locales, sociedad civil y organismos internacionales. La implementación de programas que integren el acceso a una alimentación adecuada, mejoras en los servicios de salud y campañas de concienciación pueden marcar una diferencia significativa en la reducción de la DCI. Asimismo, el monitoreo constante de los indicadores y la inversión en nutrición infantil deben ser prioridades dentro de la agenda de desarrollo del país.

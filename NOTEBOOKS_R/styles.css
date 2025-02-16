@@ -1,4 +1,47 @@
-body {
-    max-width: 2500px; /* Ajusta el ancho según tus necesidades */
-    margin: auto;      /* Centrar el contenido */
+/* Estilo para el menú de navegación */
+.nav {
+    display: flex; /* Usar flexbox para alinear los botones */
+    justify-content: flex-end; /* Alinear el menú a la derecha */
+    background-color: #f0f0f0; /* Fondo gris */
+    padding: 10px; /* Espaciado interno */
+    border: 2px solid #333; /* Borde del menú */
+    width: 15%; /* Ajustar el ancho del menú */
+    margin-left: 0; /* Alinear el menú más a la izquierda */
+    margin-right: 50px; /* Espacio desde el borde derecho */
+    margin-bottom: 20px; /* Espacio inferior del menú */
+}
+
+/* Estilo para los botones del menú */
+.nav a {
+    padding: 10px 20px; /* Espaciado interno en los botones */
+    text-decoration: none; /* Eliminar subrayado */
+    color: #333; /* Color del texto */
+    background-color: #ffffff; /* Fondo blanco para los botones */
+    border: 1px solid #ccc; /* Borde del botón */
+    border-radius: 5px; /* Bordes redondeados */
+    transition: background-color 0.3s; /* Transición suave para el color de fondo */
+}
+
+.nav a:hover {
+    background-color: #e0e0e0; /* Color de fondo al pasar el mouse */
+}
+
+/* Asegurar que el cuerpo esté separado del menú */
+.content {
+    text-align: justify; /* Justificar todo el texto */
+    text-justify: inter-word; /* Mejorar la justificación */
+    max-width: 85%; /* Aumentar el ancho del contenido */
+    margin: 0 auto; /* Centrar el contenido */
+    padding: 20px; /* Espaciado interno */
+    margin-left: 20px; /* Separar horizontalmente del menú */
+}
+
+/* Ajustar el ancho del Table of Contents (ToC) */
+.toc-content {
+    width: 200px; /* Ajusta el ancho */
+}
+
+/* Ajustar la barra lateral */
+.sidebar {
+    width: 350px; /* Aumentar el ancho */
 }

@@ -5,7 +5,7 @@ import pandas as pd
 import pyreadr
 from scipy.stats import kurtosis, skew
 from sqlalchemy import create_engine
-import os
+# import os
 
 class ETL_ENDI:
     def __init__(self, db_user='postgres', db_password='marce', db_name='db_stat', db_host='localhost', db_port='5432'):
