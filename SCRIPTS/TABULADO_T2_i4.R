@@ -1,6 +1,18 @@
 
 library(srvyr)
-library(tidyverse)
+library(tidyverse)l
+library(RPostgreSQL)
+
+# Conectar a PostgreSQL
+postgresql_conex <- dbConnect(PostgreSQL(),
+                              dbname = "db_stat",
+                              host = "localhost", 
+                              port = 5432,
+                              user = "postgres",
+                              password = "marce")
+
+# Leer datos desde PostgreSQL
+f1_personas <- dbGetQuery(postgresql_conex, "SELECT * FROM endi.f1_personas")
 
 dci_provincial <- f1_personas %>%
   group_by(prov) %>%  # Agrupar por provincia
@@ -11,6 +23,7 @@ dci_provincial <- f1_personas %>%
     dci_provincial = round((ninios_dci / total_ninios) * 100, 2),  # Proporción en porcentaje
     .groups = "drop"  # Eliminar agrupamiento posterior
   )
+
 
 # Convertir los datos a un diseño de encuesta
 f1_survey <- f1_personas %>%
