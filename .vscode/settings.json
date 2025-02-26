@@ -1,0 +1,31 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "askForPassword": true,
+            "driver": "PostgreSQL",
+            "name": "endi",
+            "database": "db_stat",
+            "username": "postgres"
+        }
+    ],
+    "dbcode.connections": [
+        {
+            "connectionId": "E5rRC6njNAjjD8EVk0dSk",
+            "name": "endi",
+            "driver": "postgres",
+            "color": "#00A6FF",
+            "connectionType": "host",
+            "host": "localhost",
+            "port": 5432,
+            "ssl": false,
+            "username": "postgres",
+            "password": "",
+            "savePassword": "secretStorage",
+            "database": "db_stat",
+            "connectionTimeout": 30
+        }
+    ]
+}
