@@ -1,0 +1,17 @@
+TY  - JOUR
+AU  - Wang, Beibei
+AU  - Sun, Fengzhu
+AU  - Luan, Yihui
+PY  - 2024
+DA  - 2024/03/25
+TI  - Comparison of the effectiveness of different normalization methods for metagenomic cross-study phenotype prediction under heterogeneity
+JO  - Scientific Reports
+SP  - 7024
+VL  - 14
+IS  - 1
+AB  - The human microbiome, comprising microorganisms residing within and on the human body, plays a crucial role in various physiological processes and has been linked to numerous diseases. To analyze microbiome data, it is essential to account for inherent heterogeneity and variability across samples. Normalization methods have been proposed to mitigate these variations and enhance comparability. However, the performance of these methods in predicting binary phenotypes remains understudied. This study systematically evaluates different normalization methods in microbiome data analysis and their impact on disease prediction. Our findings highlight the strengths and limitations of scaling, compositional data analysis, transformation, and batch correction methods. Scaling methods like TMM show consistent performance, while compositional data analysis methods exhibit mixed results. Transformation methods, such as Blom and NPN, demonstrate promise in capturing complex associations. Batch correction methods, including BMC and Limma, consistently outperform other approaches. However, the influence of normalization methods is constrained by population effects, disease effects, and batch effects. These results provide insights for selecting appropriate normalization approaches in microbiome research, improving predictive models, and advancing personalized medicine. Future research should explore larger and more diverse datasets and develop tailored normalization strategies for microbiome data analysis.
+SN  - 2045-2322
+UR  - https://doi.org/10.1038/s41598-024-57670-2
+DO  - 10.1038/s41598-024-57670-2
+ID  - Wang2024
+ER  - 

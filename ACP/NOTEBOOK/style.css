@@ -1,0 +1,45 @@
+.important {
+  color: maroon;
+}
+
+h1, .h1, h2, .h2, h3, .h3 {
+    margin-top: 84px;
+}
+
+.illustration {
+  border: 1px solid rgb(230, 230, 230); 
+}
+
+
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+  text-align: justify;
+    strong {
+    font-size: 12px; /* Tamaño de fuente para los encabezados fuertes */
+  }
+
+  p {
+    font-size: 8px; /* Tamaño de fuente para los párrafos */
+  }
+}
+
+.seccion {
+  background-color: #203D5A;
+  border: 1px solid #ccc;
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  font-size: 18px;
+  color: white;
+  font-weight: bold;
+  max-height: 28px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seccion p {
+  margin: 0; /* Elimina el margen predeterminado del párrafo dentro del div */
+}

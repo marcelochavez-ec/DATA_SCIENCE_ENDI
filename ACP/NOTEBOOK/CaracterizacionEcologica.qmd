@@ -1,0 +1,1557 @@
+---
+# Metadatos --------------------------
+title: "MODELO FACTORIAL MULTIVARIANTE PARA LA ELABORACIÓN DE UN ÍNDICE MULTIDIMENSIONAL EN LAS COMUNIDADES DE MACROINVERTEBRADOS"
+subtitle: "Maestría en Biodiversidad y Cambio Climático"
+date: today
+date-format: long
+author: "Marcelo Chávez"
+
+abstract: "En el presente Notebook de **R**, se desarrolla un proceso estadístico que aplica un **Modelo Factorial Multivariante** por Componentes Principales (**Analysis Component Principal - ACP**) y una **Clusterización** que determina la taxonomía de grupos de Ríos para las comunidades de macroinvertebrados con base a variables físico-químicas y ecológicas. El proceso que se desarrolla para reducir la dimensionalidad de los datos se basa en resumir la máxima variabilidad de los mismos. Adicionalmente, se empleará un algoritmo de **K-Means** para agrupar dichas variables en función de su similitud, permitiendo identificar grupos de variables y explorar sus posibles diferencias. Al integrar dichos métodos analíticos, esta investigación proporcionará una comprensión más profunda sobre el el comportamiento de las comunidades de macroinvertebrados. Finalmente, Los hallazgos de este análisis contribuirán a crear futuras estrategias de conservación y gestión en estos ecosistemas."
+
+abstract-title: "Resumen\n\n"                   # -> Solo en HTML
+thanks: "MAESTRÍA EN BIODIVERSIDAD Y CAMBIO CLIMÁTICO" # -> Solo PDF
+lang: es
+
+# Tablas de contenidos ---------------
+toc: true
+toc-title: "Contenido:"
+number-sections: true
+number-depth: 3
+toc-depth: 3
+toc-location: left    # -> Solo en HTML (right, left, body)
+toc-expand: true       # -> Solo en HTML
+smooth-scroll: true    # -> Solo en HTML
+lof: true              # -> Solo en PDF
+lot: true              # -> Solo en PDF
+
+# Fuentes ----------------------------
+mainfont: Verdana
+monofont: Lucida Sans Typewriter
+mathfont: Arial
+fontsize: 10pt
+
+# Colores ---------------------------
+linkcolor: black
+urlcolor: cyan        # -> Solo en PDF
+toccolor: black       # -> Solo en PDF
+
+# Diseño de página -------------------
+geometry: 
+  - margin = 1in
+linestretch: 1.5
+indent: true
+
+# Código (formatos) -------------------
+code-fold: true          # -> Solo HTML
+code-copy: true         # -> Solo HTML
+code-link: true         # -> Solo HTML
+code-tools: false         # -> Solo HTML
+code-line-numbers: true
+code-annotations: true
+code-overflow: scroll
+
+# Figuras y tablas --------------------
+fig-pos: "tb"
+fig-format: png
+fig-align: center          # -> Default
+fig-cap-location: bottom   # -> Default
+tbl-cap-location: top      # -> Default
+fig-responsive: true
+
+# Referencias
+biblio-title: "Bibliografía"
+link-citations: true
+link-bibliography: true
+# cite-method: citeproc        # --> Solo PDF
+# biblio-style: "authoryear"   # --> Solo PDF
+# citations-hover: true
+bibliography: bibliography.bib
+cls: apa.cls
+
+crossref:
+  fig-title: "Figura"
+  fig-prefix: "Fig."
+  fig-labels: roman
+  lof-title: "Listado de figuras"
+  eq-prefix: "Eq."
+  sec-prefix: "Sec."
+  tbl-prefix: "Tabla"
+
+# Formato
+prefer-html: true
+format:
+  html:
+    toc: true
+    minimal: false
+    toc-title: "**CONTENIDOS**"
+    toccolor: green
+    html-math-method: katex
+    documentclass: scrreprt
+    grid:
+      body-width: 2000px
+      sidebar-width: 200px
+      margin-width: 200px
+    # Opciones execute -------------------
+    execute:
+        echo: true
+        warning: false
+        message: false
+    css: style.css
+    fig-height: 8
+    fig-width: 10
+    citations-hover: true         # -> Solo HTML
+
+css: style.css
+include-after-body: "footer.html"
+
+editor: visual
+---
+
+```{r, librerias}
+# Librerías y directorio de trabajo:
+library(tidyverse)
+library(DT)
+library(highcharter)
+library(psych)
+library(gridExtra)
+library(glue)
+library(e1071)
+library(reshape2)
+library(factoextra)
+library(FactoMineR)
+library(corrplot)
+library(knitr)
+library(kableExtra)
+library(RColorBrewer) # Librería para la paleta de colores
+
+knitr::opts_knit$set(root.dir = "D:/DATA_SCIENCE_ENDI/ACP/")
+```
+
+# Análisis Exploratorio de los Índices Físquico-Químicos y Ecológicos
+
+Iniciaremos realizando un análisis gráfico mediante una técnica gráfica muy popular como lo es el **Boxplot** [@walpole2012probability] (Diagrama de caja y bigotes) comparativo, para visualizar si existen valores atípicos y como se distribuyen las variables en los años **1995 y 2021** según las escalas de medición originales en cada variable:
+
+**Cuantiles:** Un cuantil de una muestra, $q(f)$, es un valor para el que una fracción específica $f$ de los valores de los datos es menor o igual a $q(f)$.
+
+Un cuantil representa una estimación de una característica de una población o, más bien, la distribución teórica. La mediana de la muestra es $q(0.5)$. El percentil 75 (cuartil superior) es $q(0.75)$ y el cuantil inferior es $q(0.25)$. Una gráfica de cuantiles simplemente son los valores de los datos en el eje vertical contra una evaluación empírica de la fracción de observaciones excedidas por los valores de los datos [@walpole2012probability].
+
+## Dataset de los Índices Físico Químicos y Ecológicos:
+
+```{r, lectura_datos}
+# Carga del DataSet y transformaciones -----------------------------------------
+
+indices_fq <- readxl::read_excel("DATASETS/DatosMacroinvertebrados.xlsx") %>% 
+  mutate_if(is.numeric, ~ round(., 2))
+
+cols <- c("RIOS","ANIO")
+
+df_largo <- indices_fq %>%
+    pivot_longer(cols = -RIOS, 
+                 names_to = c(".value", "ANIO"), 
+                 names_pattern = "(.*)_(\\d{4})") %>% 
+  mutate_at(.vars = cols, .funs = factor)
+
+indices_fq_ddc <- df_largo %>%
+    mutate(ID = glue("{RIOS}_{ANIO}")) %>%
+    column_to_rownames(var = "ID") %>% 
+    select(-RIOS,
+           -ANIO)
+
+var_scale <- as.data.frame(lapply(indices_fq_ddc, function(x) if(is.numeric(x)) scale(x) else x))
+
+df_fq_1995 <- pivot_longer(df_largo,
+                           cols = c(ANCHO,
+                                    PROFUNDIDAD,
+                                    VELOCIDAD,
+                                    DESCARGA,
+                                    PH,
+                                    TEMPERATURA,
+                                    OXIGENO_DISUELTO,
+                                    CONDUCTIVIDAD,
+                                    RIQUEZA,
+                                    ABUNDANCIA,
+                                    DIVERSIDAD,
+                                    ABI,
+                                    BMWP,
+                                    IBF),
+                           names_to = "VARIABLE",
+                           values_to = "VALOR") %>% 
+    filter(ANIO=="1995")
+
+df_fq_2021 <- pivot_longer(df_largo, 
+                           cols = c(ANCHO,
+                                    PROFUNDIDAD,
+                                    VELOCIDAD,
+                                    DESCARGA,
+                                    PH,
+                                    TEMPERATURA,
+                                    OXIGENO_DISUELTO,
+                                    CONDUCTIVIDAD,
+                                    RIQUEZA,
+                                    ABUNDANCIA,
+                                    DIVERSIDAD,
+                                    ABI,
+                                    BMWP,
+                                    IBF),
+                           names_to = "VARIABLE",
+                           values_to = "VALOR") %>% 
+    filter(ANIO=="2021")
+
+
+# Data para BoxPlot:
+
+df_bx_95 <- data_to_boxplot(
+    df_fq_1995,
+    variable = VALOR,
+    group_var = VARIABLE,
+    # group_var2 = codigo,
+    add_outliers = T
+)
+
+df_bx_21 <- data_to_boxplot(
+    df_fq_2021,
+    variable = VALOR,
+    group_var = VARIABLE,
+    # group_var2 = codigo,
+    add_outliers = T
+)
+
+# Visualización del Dataset
+
+DT::datatable(df_largo,
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla: ', htmltools::em('Indicadores Físico-Químicos y Ecológicos para los años 1995 y 2021')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = TRUE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel'),
+    deferRender = TRUE,
+    scrollY = 500,
+    scroller = TRUE))
+```
+
+## Boxplot de los indicadores físico-químicos y ecológicos:
+
+### Año 1995
+
+Para el gráfico de los **Boxplot** se obtiene de la siguiente estructura de datos:
+
+```{r funcion_boxplot}
+estadisticos_boxplot <- function(df, year) {
+  
+  df <- subset(df, ANIO == year)
+  df <- df[sapply(df, is.numeric)]
+  
+  cuartiles <- as.data.frame(apply(df, 2, quantile, probs = c(0.25, 0.5, 0.75)))
+  rownames(cuartiles) <- c("Q1", "Q2", "Q3")
+  
+  minimos <- as.data.frame(t(apply(df, 2, min)))
+  rownames(minimos) <- "Mínimo"
+  
+  maximos <- as.data.frame(t(apply(df, 2, max)))
+  rownames(maximos) <- "Máximo"
+  
+  estadisticos <- rbind(cuartiles,
+                        minimos,
+                        maximos)
+  
+  # Redondear los valores
+  estadisticos <- round(estadisticos, 2)
+  
+  # Añadir los nombres de las estadísticas como una columna
+  estadisticos$ESTADISTICOS <- rownames(estadisticos)
+  
+  # Reorganizar las columnas
+  estadisticos <- estadisticos %>%
+    select(ESTADISTICOS, everything())
+  
+  rownames(estadisticos) <- NULL
+  
+  return(estadisticos)
+  
+}
+
+# Ejemplo de uso
+cuartiles_95 <- estadisticos_boxplot(df_largo, "1995")
+
+DT::datatable(cuartiles_95,
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla: ', htmltools::em('Estadísticos del Boxplot - Año 1995')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = FALSE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel')))
+```
+
+```{r boxplot_95}
+highchart() %>%
+    hc_xAxis(type = "category",
+             labels = list(
+                 rotation = 270
+             )) %>%
+    hc_add_series_list(df_bx_95) %>%
+    hc_xAxis(title = list(text = "VARIABLES")) %>%
+    hc_yAxis(title = list(text = "VALORES")) %>%
+    hc_title(text = "BOXPLOT COMPARATIVO ENTRE VARIABLES FÍSICO QUÍMICAS y ECOLÓGICAS - AÑO 1995") %>%
+    hc_subtitle(text = "AÑO 1995", align="left") %>%
+    hc_caption(text = "ELABORADO POR: Marcelo Chávez") %>%
+    hc_legend(enabled = F, title = list(text = "<b>ESTACIONES DE MONITOREO:</b>")) %>%
+    hc_tooltip(formatter = JS("function() {
+    var tooltip = '';
+    if (this.point.low && this.point.q1 && this.point.median && this.point.q3 && this.point.high) {
+        tooltip += '<b>Variable: </b>' + this.point.name + '<br/>' +
+                   '<b>Mínimo: </b>' + this.point.low.toFixed(2) + '</b><br/>' +
+                   '<b>Q1: </b>' + this.point.q1.toFixed(2) + '</b><br/>' +
+                   '<b>Mediana: </b>' + this.point.median.toFixed(2) + '</b><br/>' +
+                   '<b>Q3: </b>' + this.point.q3.toFixed(2) + '</b><br/>' +
+                   '<b>Máximo: </b>' + this.point.high.toFixed(2) + '</b><br/>';
+    }
+    if (this.point.y && !(this.point.low && this.point.q1 && this.point.median && this.point.q3 && this.point.high)) { 
+        tooltip += '<b>Valor Atípico: </b>' + this.point.y.toFixed(2) + '<br/>';
+    }
+    return tooltip;}")) %>% 
+    hc_add_theme(hc_theme_gridlight())
+```
+
+::: callout-note
+#### **Análisis por variable del año 1995**
+
+#### **1. Variable: Descarga**
+
+La descarga de agua en el río presenta la siguiente distribución:
+
+-   El primer cuartil (Q1) de la descarga es de 39 metros cúbicos por segundo, lo que indica que el 25% de las mediciones de descarga son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la descarga es de 87 metros cúbicos por segundo, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la descarga es de 183.5 metros cúbicos por segundo, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la descarga es de 5 metros cúbicos por segundo, mientras que el máximo es de 298 metros cúbicos por segundo.
+
+#### **2. Variable: *pH***
+
+El pH del agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del pH es de 7.47, lo que indica que el 25% de las mediciones de pH son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del pH es de 7.63, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del pH es de 8.03, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo del pH es de 6.18, mientras que el máximo es de 8.25.
+
+#### **3. Variable: *Temperatura***
+
+La temperatura del agua en el río presenta la siguiente distribución:
+
+-   El primer cuartil (Q1) de la temperatura es de 6.4 grados Celsius, lo que indica que el 25% de las mediciones de temperatura son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la temperatura es de 10.6 grados Celsius, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la temperatura es de 11.85 grados Celsius, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la temperatura es de 6.3 grados Celsius, mientras que el máximo es de 14.8 grados Celsius.
+
+#### **4. Variable: *Oxígeno Disuelto***
+
+El oxígeno disuelto en el agua del río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del oxígeno disuelto es de 6.7 mg/L, lo que indica que el 25% de las mediciones de oxígeno disuelto son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del oxígeno disuelto es de 7.1 mg/L, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del oxígeno disuelto es de 7.45 mg/L, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo del oxígeno disuelto es de 6.3 mg/L, mientras que el máximo es de 7.7 mg/L.
+
+#### **5. Variable: *Conductividad***
+
+La conductividad del agua en el río exhibe la siguiente distribución:
+
+-   El primer cuartil (Q1) de la conductividad es de 38.5 μS/cm, lo que indica que el 25% de las mediciones de conductividad son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la conductividad es de 48 μS/cm, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la conductividad es de 63 μS/cm, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la conductividad es de 19 μS/cm, mientras que el máximo es de 119 μS/cm.
+
+#### **6. Variable: *Riqueza***
+
+La riqueza de especies de macroinvertebrados en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la riqueza es de 11 especies, lo que indica que el 25% de las mediciones de riqueza son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la riqueza es de 13 especies, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la riqueza es de 15 especies, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la riqueza es de 8 especies, mientras que el máximo es de 20 especies.
+
+#### **7. Variable: *Abundancia***
+
+La abundancia de macroinvertebrados en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la abundancia es de 500.5 individuos, lo que indica que el 25% de las mediciones de abundancia son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la abundancia es de 598 individuos, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la abundancia es de 1557 individuos, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la abundancia es de 335 individuos, mientras que el máximo es de 2926 individuos.
+
+#### **8. Variable: *Diversidad***
+
+La diversidad de especies de macroinvertebrados en el río exhibe la siguiente distribución:
+
+-   El primer cuartil (Q1) de la diversidad es de 1.44, lo que indica que el 25% de las mediciones de diversidad son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la diversidad es de 1.6, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la diversidad es de 1.72, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo de la diversidad es de 0.85, mientras que el máximo es de 2.05.
+
+#### **9. Variable: *ABI***
+
+El Índice de Bioticidad del Agua (ABI) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del ABI es de 39, lo que indica que el 25% de las mediciones de ABI son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del ABI es de 61, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del ABI es de 71.5, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo del ABI es de 17, mientras que el máximo es de 102.
+
+#### **10. Variable: *BMWP***
+
+El Índice de Calidad del Agua del Macroinvertebrados Bentónicos (BMWP) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del BMWP es de 38, lo que indica que el 25% de las mediciones de BMWP son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del BMWP es de 49, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del BMWP es de 67, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo del BMWP es de 17, mientras que el máximo es de 86.
+
+#### **11. Variable: *IBF***
+
+El Índice Biótico de Familias (IBF) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del IBF es de 3.57, lo que indica que el 25% de las mediciones de IBF son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del IBF es de 4.44, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del IBF es de 4.86, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+
+-   El mínimo del IBF es de 2, mientras que el máximo es de 6.22.
+
+#### **12. Variable: *Ancho***
+
+El ancho de los ríos muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del ancho del río es de 1.78 metros, lo que indica que el 25% de los datos de ancho del río son iguales o inferiores a este valor.
+
+-   La mediana (Q2) del ancho del río es de 1.93 metros, lo que significa que el 50% de los datos son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) del ancho del río es de 2.7 metros, lo que indica que el 75% de los datos son iguales o inferiores a este valor.
+
+-   El mínimo del ancho del río es de 1.23 metros, mientras que el máximo es de 6 metros.
+
+#### **13. Variable: *Profundidad***
+
+La profundidad en los ríos muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la profundidad del río es de 0.16 metros, lo que indica que el 25% de los datos de profundidad del río son iguales o inferiores a este valor.
+
+-   La mediana (Q2) de la profundidad del río es de 0.17 metros, lo que significa que el 50% de los datos son iguales o inferiores a este valor.
+
+-   El tercer cuartil (Q3) de la profundidad del río es de 0.18 metros, lo que indica que el 75% de los datos son iguales o inferiores a este valor.
+
+-   El mínimo de la profundidad del río es de 0.07 metros, mientras que el máximo es de 0.27 metros.
+
+#### **14. Variable: *Velocidad***
+
+La velocidad en los ríos muestra la siguiente distribución:
+
+El primer cuartil (Q1) de la velocidad del agua en el río es de 0.14 metros por segundo, lo que indica que el 25% de los datos de velocidad del agua en el río son iguales o inferiores a este valor.
+
+La mediana (Q2) de la velocidad del agua en el río es de 0.2 metros por segundo, lo que significa que el 50% de los datos son iguales o inferiores a este valor.
+
+El tercer cuartil (Q3) de la velocidad del agua en el río es de 0.32 metros por segundo, lo que indica que el 75% de los datos son iguales o inferiores a este valor.
+
+El mínimo de la velocidad del agua en el río es de 0.05 metros por segundo, mientras que el máximo es de 0.53 metros por segundo.
+:::
+
+### Año 2021
+
+Para el gráfico de los **Boxplot** se obtiene de la siguiente estructura de datos:
+
+```{r}
+# Calcula los estadísticos para graficar un boxplot
+cuartiles_21 <- estadisticos_boxplot(df_largo, "2021")
+
+DT::datatable(cuartiles_21,
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla: ', htmltools::em('Estadísticos del Boxplot - Año 2021')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = FALSE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel')))
+```
+
+```{r, boxplot_21}
+highchart() %>%
+    hc_xAxis(type = "category",
+             labels = list(
+                 rotation = 270
+             )) %>%
+    hc_add_series_list(df_bx_21) %>%
+    hc_xAxis(title = list(text = "VARIABLES")) %>%
+    hc_yAxis(title = list(text = "VALORES")) %>%
+    hc_title(text = "BOXPLOT COMPARATIVO ENTRE ÍNDICES FÍSICO QUÍMICOS y ECOLÓGICOS - AÑO 2021") %>%
+    hc_subtitle(text = "AÑO 2021", align="left") %>%
+    hc_caption(text = "ELABORADO POR: Marcelo Chávez") %>%
+    hc_legend(enabled = F, title = list(text = "<b>ESTACIONES DE MONITOREO:</b>")) %>%
+    hc_tooltip(formatter = JS("function() {
+    var tooltip = '';
+    if (this.point.low && this.point.q1 && this.point.median && this.point.q3 && this.point.high) {
+        tooltip += '<b>Variable: </b>' + this.point.name + '<br/>' +
+                   '<b>Mínimo: </b>' + this.point.low.toFixed(2) + '</b><br/>' +
+                   '<b>Q1: </b>' + this.point.q1.toFixed(2) + '</b><br/>' +
+                   '<b>Mediana: </b>' + this.point.median.toFixed(2) + '</b><br/>' +
+                   '<b>Q3: </b>' + this.point.q3.toFixed(2) + '</b><br/>' +
+                   '<b>Máximo: </b>' + this.point.high.toFixed(2) + '</b><br/>';
+    }
+    if (this.point.y && !(this.point.low && this.point.q1 && this.point.median && this.point.q3 && this.point.high)) { 
+        tooltip += '<b>Valor Atípico: </b>' + this.point.y.toFixed(2) + '<br/>';
+    }
+    return tooltip;}")) %>% 
+    hc_add_theme(hc_theme_gridlight())
+```
+
+::: callout-note
+#### **Análisis por variable del año 2021**
+
+#### **1. Variable: Ancho**
+
+El ancho del río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del ancho es de 1.63 metros, lo que indica que el 25% de las mediciones de ancho son iguales o inferiores a este valor.
+-   La mediana (Q2) del ancho es de 2.39 metros, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del ancho es de 4.2 metros, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del ancho es de 1 metro, mientras que el máximo es de 7 metros.
+
+#### **2. Variable: Profundidad**
+
+La profundidad del río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la profundidad es de 0.22 metros, lo que indica que el 25% de las mediciones de profundidad son iguales o inferiores a este valor.
+-   La mediana (Q2) de la profundidad es de 0.26 metros, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la profundidad es de 0.33 metros, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la profundidad es de 0.16 metros, mientras que el máximo es de 0.5 metros.
+
+#### **3. Variable: Velocidad**
+
+La velocidad del agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la velocidad es de 0.15 metros por segundo, lo que indica que el 25% de las mediciones de velocidad son iguales o inferiores a este valor.
+-   La mediana (Q2) de la velocidad es de 0.2 metros por segundo, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la velocidad es de 0.53 metros por segundo, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la velocidad es de 0.03 metros por segundo, mientras que el máximo es de 1.38 metros por segundo.
+
+#### **4. Variable: Descarga**
+
+La descarga de agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la descarga es de 87.4 metros cúbicos por segundo, lo que indica que el 25% de las mediciones de descarga son iguales o inferiores a este valor.
+-   La mediana (Q2) de la descarga es de 291.34 metros cúbicos por segundo, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la descarga es de 489.75 metros cúbicos por segundo, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la descarga es de 6.65 metros cúbicos por segundo, mientras que el máximo es de 742.72 metros cúbicos por segundo.
+
+#### **5. Variable: pH**
+
+El pH del agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del pH es de 7.62, lo que indica que el 25% de las mediciones de pH son iguales o inferiores a este valor.
+-   La mediana (Q2) del pH es de 7.74, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del pH es de 8.07, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del pH es de 7.2, mientras que el máximo es de 8.52.
+
+#### **6. Variable: Temperatura**
+
+La temperatura del agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la temperatura es de 8.65 grados Celsius, lo que indica que el 25% de las mediciones de temperatura son iguales o inferiores a este valor.
+-   La mediana (Q2) de la temperatura es de 9.6 grados Celsius, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la temperatura es de 10.8 grados Celsius, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la temperatura es de 6.5 grados Celsius, mientras que el máximo es de 13.1 grados Celsius.
+
+#### **7. Variable: Oxígeno Disuelto**
+
+El oxígeno disuelto en el agua del río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del oxígeno disuelto es de 7.53 mg/L, lo que indica que el 25% de las mediciones de oxígeno disuelto son iguales o inferiores a este valor.
+-   La mediana (Q2) del oxígeno disuelto es de 7.63 mg/L, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del oxígeno disuelto es de 7.88 mg/L, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del oxígeno disuelto es de 5.1 mg/L, mientras que el máximo es de 8.28 mg/L.
+
+#### **8. Variable: Conductividad**
+
+La conductividad del agua en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la conductividad es de 27.4 µS/cm, lo que indica que el 25% de las mediciones de conductividad son iguales o inferiores a este valor.
+-   La mediana (Q2) de la conductividad es de 41.6 µS/cm, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la conductividad es de 59.6 µS/cm, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la conductividad es de 16.7 µS/cm, mientras que el máximo es de 82 µS/cm.
+
+#### **9. Variable: Riqueza**
+
+La riqueza de especies de macroinvertebrados en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la riqueza es de 5 especies, lo que indica que el 25% de las mediciones de riqueza son iguales o inferiores a este valor.
+-   La mediana (Q2) de la riqueza es de 6 especies, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la riqueza es de 7.5 especies, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la riqueza es de 3 especies, mientras que el máximo es de 8 especies.
+
+#### **10. Variable: Abundancia**
+
+La abundancia de macroinvertebrados en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la abundancia es de 82 individuos, lo que indica que el 25% de las mediciones de abundancia son iguales o inferiores a este valor.
+-   La mediana (Q2) de la abundancia es de 98 individuos, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la abundancia es de 173.5 individuos, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la abundancia es de 15 individuos, mientras que el máximo es de 414 individuos.
+
+#### **11. Variable: Diversidad**
+
+La diversidad de especies de macroinvertebrados en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) de la diversidad es de 0.8, lo que indica que el 25% de las mediciones de diversidad son iguales o inferiores a este valor.
+-   La mediana (Q2) de la diversidad es de 1.46, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) de la diversidad es de 1.5, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo de la diversidad es de 0.32, mientras que el máximo es de 1.63.
+
+#### **12. Variable: ABI**
+
+El Índice de Bioticidad (ABI) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del ABI es de 18.5, lo que indica que el 25% de las mediciones de ABI son iguales o inferiores a este valor.
+-   La mediana (Q2) del ABI es de 26, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del ABI es de 32.5, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del ABI es de 12, mientras que el máximo es de 41.
+
+#### **13. Variable: BMWP**
+
+El índice de BMWP (Biological Monitoring Working Party) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del índice BMWP es de 20.5, lo que indica que el 25% de las mediciones de BMWP son iguales o inferiores a este valor.
+-   La mediana (Q2) del índice BMWP es de 31, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del índice BMWP es de 33, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del índice BMWP es de 12, mientras que el máximo es de 42.
+
+#### **14. Variable: IBF**
+
+El Índice Biótico de Familias (IBF) en el río muestra la siguiente distribución:
+
+-   El primer cuartil (Q1) del IBF es de 1.85, lo que indica que el 25% de las mediciones de IBF son iguales o inferiores a este valor.
+-   La mediana (Q2) del IBF es de 3.71, lo que significa que el 50% de las mediciones son iguales o inferiores a este valor.
+-   El tercer cuartil (Q3) del IBF es de 5.97, lo que indica que el 75% de las mediciones son iguales o inferiores a este valor.
+-   El mínimo del IBF es de 0.42, mientras que el máximo es de 6.76.
+:::
+
+## Exploratorio de los datos:
+
+El Análisis Exploratorio de los datos es relevante para determinar el comportamiento y naturaleza de las variables, podemos observar su distribución a través de medidas de localización y variabilidad [@walpole2012probability]
+
+```{r, f_exploratorio}
+exploratorio <- function(df) {
+    tipos <- sapply(df, class)
+    valores_min <- sapply(df, function(x) ifelse(is.numeric(x), min(x[complete.cases(x)]), NA))
+    valores_max <- sapply(df, function(x) ifelse(is.numeric(x), max(x[complete.cases(x)]), NA))
+    coeficientes_asimetria <- sapply(df, function(x) ifelse(is.numeric(x), round(e1071::skewness(x[complete.cases(x)]), 2), NA))
+    curtosis <- sapply(df, function(x) ifelse(is.numeric(x), round(kurtosis(x[complete.cases(x)]), 2), NA))
+    promedio <- sapply(df, function(x) ifelse(is.numeric(x), round(mean(x[complete.cases(x)]), 2), NA))
+    medianas <- sapply(df, function(x) ifelse(is.numeric(x), round(median(x[complete.cases(x)]), 2), NA))
+    modas <- sapply(df, function(x) ifelse(is.numeric(x), {
+        tab <- table(x[complete.cases(x)])
+        as.numeric(names(tab)[tab == max(tab)])}, NA))
+    rangos <- sapply(df, function(x) ifelse(is.numeric(x), round(max(x[complete.cases(x)]) - min(x[complete.cases(x)]), 2), NA))
+    varianzas <- sapply(df, function(x) ifelse(is.numeric(x), round(var(x[complete.cases(x)]), 2), NA))
+    desviaciones <- sapply(df, function(x) ifelse(is.numeric(x), round(sd(x[complete.cases(x)]), 2), NA))
+    coeficientes_variacion <- sapply(df, function(x) ifelse(is.numeric(x), round(sd(x[complete.cases(x)]) / mean(x[complete.cases(x)]), 2), NA))
+    
+    resumen <- data.frame(Variable = names(df),
+                          Tipo = tipos,
+                          Minimo = valores_min,
+                          Maximo = valores_max,
+                          Rango = rangos,
+                          Promedio = promedio,
+                          Mediana = medianas,
+                          Desviacion_Estandar = desviaciones,
+                          Coeficiente_Variacion = coeficientes_variacion,
+                          Moda = modas,
+                          Varianza = varianzas,
+                          Coeficiente_Asimetria = coeficientes_asimetria,
+                          Curtosis = curtosis,
+                          stringsAsFactors = FALSE)
+    
+    resumen$Tipo <- ifelse(resumen$Tipo == "factor", "Categórica", resumen$Tipo)
+    resumen$Tipo <- ifelse(resumen$Tipo == "POSIXct", "Fecha", resumen$Tipo)
+    resumen$Tipo <- ifelse(resumen$Tipo == "logical", "Booleana", resumen$Tipo)
+    resumen$Tipo <- ifelse(resumen$Tipo == "numeric", "Numérica", resumen$Tipo)
+    
+    # Elimina los nombres de las etiquetas de las filas
+    rownames(resumen) <- NULL
+    
+    return(resumen)
+}
+
+DT::datatable(exploratorio(df_largo),
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla: ', htmltools::em('Estimadores de Tendencia Central, Dispersión y Forma')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = TRUE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel'),
+    deferRender = TRUE,
+    scrollY = 500,
+    scroller = TRUE))
+```
+
+#### **De las medidas del Análisis Exploratorio tanto para tendencia central, como de dispersión se puede deducir lo siguiente:**
+
+::: callout-note
+#### **1. Variable: ANCHO**
+
+La variable de ancho presenta la siguiente información:
+
+-   El promedio del ancho es de 2.77 metros, lo que indica que, en promedio, el ancho de los ríos analizados es de aproximadamente 2.77 metros.
+-   La mediana del ancho es de 2.08 metros, lo que sugiere que la mitad de las mediciones de ancho están por debajo de este valor.
+-   La desviación estándar del ancho es de 1.73 metros, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación del ancho es de 0.63, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría del ancho es positivo (1.14), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis del ancho es cercana a 0.04, lo que sugiere una distribución casi normal.
+
+#### **2. Variable: PROFUNDIDAD**
+
+La variable de profundidad presenta la siguiente información:
+
+-   El promedio de la profundidad es de 0.23 metros, lo que indica que, en promedio, la profundidad de los ríos analizados es de aproximadamente 0.23 metros.
+-   La mediana de la profundidad es de 0.22 metros, lo que sugiere que la mitad de las mediciones de profundidad están por debajo de este valor.
+-   La desviación estándar de la profundidad es de 0.1 metros, lo que indica una baja dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la profundidad es de 0.44, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría de la profundidad es positivo (1.04), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de la profundidad es cercana a 0.72, lo que sugiere una distribución ligeramente leptocúrtica.
+
+#### **3. Variable: VELOCIDAD**
+
+La variable de velocidad presenta la siguiente información:
+
+-   El promedio de la velocidad es de 0.31 metros por segundo, lo que indica que, en promedio, la velocidad de los ríos analizados es de aproximadamente 0.31 metros por segundo.
+-   La mediana de la velocidad es de 0.2 metros por segundo, lo que sugiere que la mitad de las mediciones de velocidad están por debajo de este valor.
+-   La desviación estándar de la velocidad es de 0.3 metros por segundo, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la velocidad es de 0.97, lo que sugiere una alta variabilidad en relación con el promedio.
+-   El coeficiente de asimetría de la velocidad es positivo (2.08), lo que indica una asimetría pronunciada hacia la derecha en la distribución de los datos.
+-   La curtosis de la velocidad es cercana a 4.54, lo que sugiere una distribución leptocúrtica con colas pesadas.
+
+#### **4. Variable: DESCARGA**
+
+La variable de descarga presenta la siguiente información:
+
+-   El promedio de la descarga es de 212.12 metros cúbicos por segundo, lo que indica que, en promedio, la cantidad de agua que fluye por los ríos analizados es de aproximadamente 212.12 metros cúbicos por segundo.
+-   La mediana de la descarga es de 121.5 metros cúbicos por segundo, lo que sugiere que la mitad de las mediciones de descarga están por debajo de este valor.
+-   La desviación estándar de la descarga es de 220.19 metros cúbicos por segundo, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la descarga es de 1.04, lo que sugiere una alta variabilidad en relación con el promedio.
+-   El coeficiente de asimetría de la descarga es positivo (1.12), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de la descarga es cercana a 0.07, lo que sugiere una distribución casi normal.
+
+#### **5. Variable: PH**
+
+La variable de pH presenta la siguiente información:
+
+-   El promedio del pH es de 7.69, lo que indica que, en promedio, el pH del agua en los ríos analizados es de aproximadamente 7.69.
+-   La mediana del pH es de 7.74, lo que sugiere que la mitad de las mediciones de pH están por debajo de este valor.
+-   La desviación estándar del pH es de 0.57, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación del pH es de 0.07, lo que sugiere una baja variabilidad en relación con el promedio.
+-   El coeficiente de asimetría del pH es negativo (-1.15), lo que indica una asimetría pronunciada hacia la izquierda en la distribución de los datos.
+-   La curtosis del pH es cercana a 1.08, lo que sugiere una distribución leptocúrtica con colas pesadas.
+
+#### **6. Variable: TEMPERATURA**
+
+La variable de temperatura presenta la siguiente información:
+
+-   El promedio de la temperatura es de 10.15 grados Celsius, lo que indica que, en promedio, la temperatura del agua en los ríos analizados es de aproximadamente 10.15 grados Celsius.
+-   La mediana de la temperatura es de 10.1 grados Celsius, lo que sugiere que la mitad de las mediciones de temperatura están por debajo de este valor.
+-   La desviación estándar de la temperatura es de 2.11 grados Celsius, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la temperatura es de 0.21, lo que sugiere una baja variabilidad en relación con el promedio.
+-   El coeficiente de asimetría de la temperatura es positivo (0.07), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de la temperatura es cercana a -0.44, lo que sugiere una distribución platicúrtica con colas ligeras.
+
+#### **7. Variable: OXIGENO DISUELTO**
+
+La variable de oxígeno disuelto presenta la siguiente información:
+
+-   El promedio del oxígeno disuelto es de 7.27, lo que indica que, en promedio, la concentración de oxígeno disuelto en los ríos analizados es de aproximadamente 7.27.
+-   La mediana del oxígeno disuelto es de 7.5, lo que sugiere que la mitad de las mediciones de oxígeno disuelto están por debajo de este valor.
+-   La desviación estándar del oxígeno disuelto es de 0.7, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación del oxígeno disuelto es de 0.1, lo que sugiere una baja variabilidad en relación con el promedio.
+-   El coeficiente de asimetría del oxígeno disuelto es negativo (-1.32), lo que indica una asimetría pronunciada hacia la izquierda en la distribución de los datos.
+-   La curtosis del oxígeno disuelto es cercana a 1.9, lo que sugiere una distribución leptocúrtica con colas pesadas.
+
+#### **8. Variable: CONDUCTIVIDAD**
+
+La variable de conductividad presenta la siguiente información:
+
+-   El promedio de la conductividad es de 48.65, lo que indica que, en promedio, el nivel de conductividad del agua en los ríos analizados es de aproximadamente 48.65.
+-   La mediana de la conductividad es de 44.8, lo que sugiere que la mitad de las mediciones de conductividad están por debajo de este valor.
+-   La desviación estándar de la conductividad es de 24.5, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la conductividad es de 0.5, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría de la conductividad es positivo (0.97), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de la conductividad es cercana a 0.86, lo que sugiere una distribución casi normal.
+
+#### **9. Variable: RIQUEZA**
+
+La variable de riqueza presenta la siguiente información:
+
+-   El promedio de la riqueza es de 9.64, lo que indica que, en promedio, la riqueza de especies de macroinvertebrados en los ríos analizados es de aproximadamente 9.64.
+-   La mediana de la riqueza es de 8, lo que sugiere que la mitad de las mediciones de riqueza están por debajo de este valor.
+-   La desviación estándar de la riqueza es de 4.47, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la riqueza es de 0.46, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría de la riqueza es positivo (0.53), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de la riqueza es cercana a -0.71, lo que sugiere una distribución platicúrtica con colas ligeras.
+
+#### **10. Variable: ABUNDANCIA**
+
+La variable de abundancia presenta la siguiente información:
+
+-   El promedio de la abundancia es de 653.73, lo que indica que, en promedio, la abundancia de macroinvertebrados en los ríos analizados es de aproximadamente 653.73 individuos.
+-   La mediana de la abundancia es de 376, lo que sugiere que la mitad de las mediciones de abundancia están por debajo de este valor.
+-   La desviación estándar de la abundancia es de 835.32, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la abundancia es de 1.28, lo que sugiere una variabilidad alta en relación con el promedio.
+-   El coeficiente de asimetría de la abundancia es positivo (1.67), lo que indica una asimetría pronunciada hacia la derecha en la distribución de los datos.
+-   La curtosis de la abundancia es cercana a 1.64, lo que sugiere una distribución leptocúrtica con colas pesadas.
+
+#### **11. Variable: DIVERSIDAD**
+
+La variable de diversidad presenta la siguiente información:
+
+-   El promedio de la diversidad es de 1.36, lo que indica que, en promedio, la diversidad de especies de macroinvertebrados en los ríos analizados es de aproximadamente 1.36.
+-   La mediana de la diversidad es de 1.49, lo que sugiere que la mitad de las mediciones de diversidad están por debajo de este valor.
+-   La desviación estándar de la diversidad es de 0.45, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de la diversidad es de 0.33, lo que sugiere una variabilidad baja en relación con el promedio.
+-   El coeficiente de asimetría de la diversidad es negativo (-0.67), lo que indica una asimetría pronunciada hacia la izquierda en la distribución de los datos.
+-   La curtosis de la diversidad es cercana a -0.35, lo que sugiere una distribución platicúrtica con colas ligeras.
+
+#### **12. Variable: ABI**
+
+La variable de ABI presenta la siguiente información:
+
+-   El promedio del ABI es de 40.91, lo que indica que, en promedio, el valor del Índice Biótico de Armitage-Parker en los ríos analizados es de aproximadamente 40.91.
+-   La mediana del ABI es de 35, lo que sugiere que la mitad de las mediciones de ABI están por debajo de este valor.
+-   La desviación estándar del ABI es de 24.26, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación del ABI es de 0.59, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría del ABI es positivo (0.84), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis del ABI es cercana a -0.28, lo que sugiere una distribución platicúrtica con colas ligeras.
+
+#### **13. Variable: BMWP**
+
+La variable de BMWP presenta la siguiente información:
+
+-   El promedio de BMWP es de 40.09, lo que indica que, en promedio, el valor del Biological Monitoring Working Party en los ríos analizados es de aproximadamente 40.09.
+-   La mediana de BMWP es de 33.5, lo que sugiere que la mitad de las mediciones de BMWP están por debajo de este valor.
+-   La desviación estándar de BMWP es de 20.39, lo que indica una alta dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de BMWP es de 0.51, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría de BMWP es positivo (0.66), lo que indica una ligera asimetría hacia la derecha en la distribución de los datos.
+-   La curtosis de BMWP es cercana a -0.53, lo que sugiere una distribución platicúrtica con colas ligeras.
+
+#### **14. Variable: IBF**
+
+La variable de IBF presenta la siguiente información:
+
+-   El promedio de IBF es de 4.04, lo que indica que, en promedio, el valor del Índice de Biotic Integrity en los ríos analizados es de aproximadamente 4.04.
+-   La mediana de IBF es de 4.3, lo que sugiere que la mitad de las mediciones de IBF están por debajo de este valor.
+-   La desviación estándar de IBF es de 1.81, lo que indica una moderada dispersión de los datos alrededor de la media.
+-   El coeficiente de variación de IBF es de 0.45, lo que sugiere una variabilidad moderada en relación con el promedio.
+-   El coeficiente de asimetría de IBF es negativo (-0.33), lo que indica una asimetría pronunciada hacia la izquierda en la distribución de los datos.
+-   La curtosis de IBF es cercana a -0.92, lo que sugiere una distribución platicúrtica con colas ligeras.
+:::
+
+::: {.callout-important collapse="false"}
+El **Coeficiente de Variación** elimina las unidades de medida desde la desviación estándar del número de series dividiendo para el promedio de las mismas series de números [@salkind2010coefficient]
+
+-   Las variables que presentan mayor variabilidad son `Abundancia` y `Descarga` con **Coeficientes de Variación** por encima del 100%, esto lo puede corroborar la desviación estándar en comparación con el promedio de cada variable respectivamente.
+
+-   El **Coeficiente de Asimetría** en la variable `Temperatura` es cercano a **0** lo que podría sugerir que la variable se acerca a una **Distribución Normal Estándar**
+
+-   Respecto a la **Curtosis** (Mayor a 3) en las variables `Velocidad` y`Diversidad` son distribuciones con colas más largas, lo que puede sugerir la presencia de datos atípicos.
+
+Finalmente, en un contexto de modelización estadística de datos previo a la aplicación de cualquier técnica estadística, y una vez revisado los estimadores en conjunto con los Boxplot podemos confirmar que es necesario realizar un normalización a la matriz de datos, para evitar los sesgos que pueden causar los valores atípicos o las unidades de medida.
+:::
+
+# Análisis de la normalidad de los datos:
+
+A acontinuación, nos enfocaremos en revisar el comportamiento o naturaleza de los datos. Y asumiendo que obedecen a una **Distribución Normal**, es importante aplicar un **Test Estadístico** para realizar la verificación correspondiente.
+
+Consideremos una muestra aleatoria de datos $x_{1},x_{2},...,x_{n}$ que provienen de cierta distribución desconocida denotada por $F(x)$. Se quiere verificar si dichos datos fueron generados por un proceso normal, mediante las hipótesis estadísticas.
+
+$H_{0}: F(x)$ es normal $H_{0}: F(x)$ No es normal
+
+Los pasos para la prueba de **Shapiro-Wilks** son:
+
+1.  Se ordenan los de menor a mayor
+2.  Se obtienen los coeficientes $a_{i}$
+3.  Se calcula el **estadístico W**
+4.  Se considera el nivel de significancia estadística para determinar si se acepta o rechaza la $H_{0}$
+
+Se han calculado para todos los datos de los años *1995 y 2021* en 11 estaciones de monitoreo (Ríos de Ecuador).
+
+En cada variable se aplica el *Test de Normalidad* y su signicancia estadística para determinar si obedece o no a muestra proveniente de una Distribución Normal Estándar $N\approx (\bar{x}=0,\sigma^{2}=constante)$.
+
+El **Test de Shapiro-Wilk (*W*)** [@gutierrez2004analisis], es uno de las pruebas estadísticas más robustas, y se obtiene de la siguiente forma:
+
+$$W = \frac{{\left(\sum_{i=1}^{n} a_i x_{(i)}\right)^2}}{{\sum_{i=1}^{n} (x_{(i)} - \bar{x})^2}}$$
+
+> **Donde:**
+
+-   $n$ es el tamaño de la muestra.
+-   $x_{i}$ es el $i-ésimo$ valor más pequeño de la muestra ordenada.
+-   $\bar{x}$ es la media de la muestra.
+-   $a_{i}$ son los coeficientes que se utilizan para calcular el estadístico de Shapiro-Wilks, y se calculan de la siguiente forma: $\\ a_i = \frac{{m_i}}{{\sum_{i=1}^{n} m_i^2}} \\ m_i = \sum_{j=1}^{n} (x_{(j)} - \bar{x}) s_{(j)} \\ s_{(j)} = \sum_{k=1}^{j} (x_{(k)} - \bar{x})^2 \\$
+
+Los coeficientes $a_{i}$ y los estadísticos auxiliares $m_{i}$ y $x_{j}$ se calculan a partir de las observaciones de la muestra y se utilizan en la fórmula del estadístico de Shapiro-Wilk. Estos coeficientes y estadísticos se definen matemáticamente de la siguiente manera:
+
+> **Donde:**
+
+-   $m_{i}$ es la media de los elementos de las siguientes dos sumas:
+-   La suma en el numerador se calcula sobre todos los $n$ valores de la muestra.
+-   La suma en el denominador se calcula sobre todos los $n$ valores de la muestra.
+-   $s_{j}$ representa la suma de cuadrados de las diferencias entre cada observación y la media, considerando solo las primeras $j$ observaciones en orden ascendente. Esta cantidad se utiliza para calcular $m_{i}$, que a su vez se utiliza para calcular $a_{i}$, y finalmente en el cálculo del estadístico $W$.
+
+**Nota técnica:** El valor del estadístico de Shapiro-Wilk (*W*) se compara con los valores críticos de la distribución para determinar si la muestra sigue una distribución normal. Si el valor de W es significativamente menor que el valor crítico correspondiente, entonces hay evidencia para rechazar la hipótesis nula de normalidad.
+
+```{r, f_qqplot}
+numeric_vars <- indices_fq_ddc[sapply(indices_fq_ddc, is.numeric)]
+
+# Convertir el dataframe en formato largo (long format) para usar facet_wrap
+df_long <- tidyr::pivot_longer(numeric_vars, cols = everything())
+
+# Crear el Q-Q plot con facet_wrap
+ggplot(df_long, aes(sample = value)) +
+    geom_qq(color = "#003049") +
+    stat_qq_line(color = "#fcbf49") +
+    labs(
+        title = "Gráfico de los Cuantiles (Q-Q Plot) para los Índices Físico-Químicos y Ecológicos",
+        subtitle = "Estaciones de Monitoreo (Ríos) para los años 1995 y 2021",
+        x = "Cuantiles teóricos",
+        y = "Cuantiles observados",
+        caption = "Elaborado por: Marcelo Chávez"
+    ) +
+    facet_wrap(~ name, scales = "free") +
+    theme_minimal() +
+    theme(
+        panel.grid = element_line(color = "#e9ecef", size = 0.5),  # Añadir grid
+        panel.border = element_rect(color = "black", fill = NA),  # Añadir recuadro
+        axis.ticks = element_line(color = "black"),  # Añadir ticks en los ejes
+        axis.line = element_blank(),  # Eliminar líneas de ejes interiores
+        plot.title = element_text(hjust = 0.5),  # Centrar el título
+        plot.caption = element_text(hjust = 0),  # Alinear el footnote a la izquierda
+        axis.ticks.length = unit(-0.1, "cm")  # Ajustar longitud de los ticks hacia adentro
+    )
+```
+
+## Test No paramétrico de **Shapiro-Wilks** para evaluar la normalidad en las variables físico-químicas y ecológicas:
+
+```{r, t_shapiro_wilk}
+# Definir una función para aplicar el test de Shapiro-Wilk a todas las variables numéricas
+shapiro_test_all <- function(df) {
+  
+  # Filtrar solo las variables numéricas
+  numeric_vars <- df[sapply(df, is.numeric)]
+  
+  # Crear una lista para almacenar los resultados del test
+  test_results <- list()
+  
+  # Iterar sobre cada variable numérica y aplicar el test de Shapiro-Wilk
+  for (var_name in names(numeric_vars)) {
+    
+    result <- shapiro.test(numeric_vars[[var_name]])
+    
+    # Redondear el estadístico W y el valor p a dos decimales
+    result$statistic <- round(result$statistic, 2)
+    
+    result$p.value <- round(result$p.value, 2)
+    
+    test_results[[var_name]] <- result
+  }
+  
+  # Retornar los resultados como una lista
+  return(test_results)
+}
+
+# Aplicar la función al dataframe indices_fq_ddc
+shapiro_results <- shapiro_test_all(indices_fq_ddc)
+
+# Convertir los resultados en un tibble
+results_df <- tibble::enframe(shapiro_results,
+                              name = "Variable", 
+                              value = "Resultados")
+
+# Extraer los estadísticos W y los valores p en columnas separadas
+results_df <- results_df %>%
+  mutate(W = sapply(Resultados, 
+                    "[[", 
+                    "statistic"),
+         
+         p_value = sapply(Resultados, 
+                          "[[",
+                          "p.value"))
+
+# Seleccionar las columnas relevantes
+results_df <- results_df %>%
+  select(Variable, W, p_value)
+
+# Definir los niveles de significancia
+significance_levels <- c(0.05, 0.01, 0.10)
+
+# Función para determinar si el valor p es mayor o menor que un nivel de significancia dado
+check_significance <- function(p_value, 
+                               significance_level) {
+  
+  if (p_value < significance_level) {
+    return("Menor al $\\alpha$")
+  } else {
+    return("Mayor o igual $\\alpha$")
+  }
+}
+
+# Aplicar la función a cada valor p y nivel de significancia
+for (level in significance_levels) {
+  
+  results_df <- results_df %>%
+    mutate(
+      !!paste0("Nivel de Significancia al ", 
+               level) := sapply(p_value,
+                                check_significance, 
+                                significance_level = level),
+      !!paste0("Rechazas H0 al ",
+               level) := ifelse(p_value < level,
+                                "Sí",
+                                "No")
+    )
+}
+
+# Mostrar la tabla actualizada
+knitr::kable(results_df, format = "markdown")
+```
+
+## Comprobación de hipótesis para análisis normalidad:
+
+Para la comprobaciónd de normalidad se ha planteado la siguiente prueba de hipótesis:
+
+$H_{0}:$ Las variables provienen de una Distribución Normal
+
+$H_{1}:$ Las variables NO provienen de una Distribución Normal
+
+> **Análisis:** De igual forma en un contexto general los indicadores físico-químicos y ecológicos, con un nivel de significancia del 5%. De las 14 variables, 5 presentan normalidad y el resto de variables no lo son. Este resultado nos conduce a generalizar que para todo el conjunto de datos es necesario reducir la dimensionalidad y/o aplicar un **método No Paramétrico** para descubrir clústers o taxonomías entre las unidades de estudio.
+
+# Análisis Factorial por Componentes Principales:
+
+Para la **Modelización Factorial** emplearemos los siguientes pasos:
+
+### Flujo del Modelo Factorial
+
+```{mermaid}
+graph TD;
+    A(Matriz de correlaciones y su significancia estadística) --> 
+    B(Determinante de la matriz de correlaciones);
+    B --> C(Prueba de esfericidad de Bartlett);
+    C --> D(Comprobación de hipótesis para el análisis factorial por componentes principales);
+    D --> E(Gráfico de Sedimentación);
+    E --> F(Proporción de Varianza Acumulada);
+    F --> G(Componentes Principales);
+    G --> H(Autovalores y Varianzas);
+    H --> I(Círculo de las Correlaciones);
+    I --> J(Variables versus Dimensiones);
+    J --> K(Biplot);
+```
+
+Se ha tomado como referencia los pasos indicados en el libro [@hair1999analisis].
+
+## Matriz de Correlaciones:
+
+```{r, correlaciones}
+# Calcular correlaciones y p-values
+correlation_matrix <- cor(indices_fq_ddc)
+p_values <- cor.mtest(indices_fq_ddc)$p
+
+# Convertir p-values en asteriscos de acuerdo con el nivel de significancia
+significant_level <- ifelse(p_values < 0.001, "***",
+                            ifelse(p_values < 0.01, "**",
+                                   ifelse(p_values < 0.05, "*", "")))
+
+# Crear gráfico
+ggplot(data = melt(round(correlation_matrix, 2)), aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile() +
+    geom_text(aes(label = paste(round(value, 2), significant_level)), color = "black", size = 4) +
+    labs(
+        title = "Mapa de calor de correlaciones",
+        x = "",
+        y = "",
+        fill = "Nivel de Correlación",
+        caption = "Elaborado por: Marcelo Chávez"
+    ) +
+    scale_fill_gradient(low = "#caf0f8", high = "#2a9d8f") +
+    theme_minimal() +
+    theme(
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.title.x = element_text(angle = 90),
+        axis.title.y = element_text(angle = 0),
+        panel.grid = element_line(color = "#e9ecef", linewidth = 0.5),  # Cambio a linewidth
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.ticks = element_line(color = "black"),
+        axis.line = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        axis.ticks.length = unit(-0.1, "cm")
+    )
+```
+
+> Es importante conocer que el nivel de significancia de la matriz de correlaciones para definir variables que a más de tener un buen nivel de correlación, es significativo estadísticamente.
+
+> $\\p-value < 0.001 (***):$ Es significativa la correlación al 99% $\\p-value < 0.05 (**):$ Es significativa la correlación al 95% $\\p-value < 0.01 (*):$ Es significativa la correlación al 90%
+
+## Determinante de la matriz de correlaciones
+
+```{r}
+det(cor(indices_fq_ddc))
+```
+
+> Si están correlacionadas, el determinantes de la matriz de correlaciones será próximo a cero. De lo contrario el **Análisis Factorial** no es viable.
+
+## Prueba de esfericidad de Bartlett:
+
+```{r, kmo}
+KMO(indices_fq_ddc)
+cortest.bartlett(cor(indices_fq_ddc))
+```
+
+> Un KMO de 0.44 es considerado bajo y podría sugerir que un análisis factorial puede no ser adecuado para estos datos. Sin embargo, la prueba de Bartlett tiene un p-valor menor al nivel de significancia del 5%, lo que indica que las variables están correlacionadas y que, por lo tanto, podría justificarse aplicar un método multivariante para reducción de dimensionalidad.
+
+> La hipótesis nula es que la matriz de correlaciones es una matriz identidad, lo que significa que no existirían correlaciones significativas, por lo que el modelo factorial no sería pertinente.
+
+## Comprobación de hipótesis para el análisis factorial por componentes principales
+
+$H_{0}:$ Existe esfericidad
+
+$H_{1}:$ No existe esfericidad
+
+> La esfericidad implica que todas las variables tienen la misma varianza y que no hay correlaciones entre ellas.
+
+> De aquí que el valor del *KMO* de 0.44 y su p-valor es menor al 95% de confianza. Por lo tanto: Rechazamos $H_{0}$, y concluimos que es factible estadísticamente realizar la reducción de dimensiones a través de un **Análisis Factorial por Componentes Principales**
+
+## Gráfico de Sedimentación:
+
+```{r, sedimentacion}
+scree(indices_fq_ddc,
+      main ="Gráfico de Sedimentación")
+```
+
+## Proporción de varianza acumulada:
+
+```{r, varianza_acumulada}
+
+# Cálculo de los autovalores y autovectores:
+value_pro<-eigen(cor(indices_fq_ddc))
+
+Acumulado <- cumsum(value_pro$values)
+
+Prop.acumulado <- Acumulado/sum(value_pro$values)
+
+val.prop.porce <- data.frame(value_pro$values,
+                             Acumulado,
+                             Prop.acumulado)
+
+row.names(val.prop.porce) = c(expression(lambda[1]),
+                              expression(lambda[2]),
+                              expression(lambda[3]),
+                              expression(lambda[4]),
+                              expression(lambda[5]),
+                              expression(lambda[6]),
+                              expression(lambda[7]),
+                              expression(lambda[8]),
+                              expression(lambda[9]),
+                              expression(lambda[10]),
+                              expression(lambda[11]),
+                              expression(lambda[12]),
+                              expression(lambda[13]),
+                              expression(lambda[14]))
+                              
+colnames(val.prop.porce) <- c("Valor Propio",
+                              "Acumulado",
+                              "Prop. Acumulado")
+kable(val.prop.porce,
+      caption = "Valores propios desde la matriz de correlaciones",
+      digits = 2,
+      format.args = list(decimal.mark =",")) %>%
+  row_spec(row = 5,
+           background="#a7c957",
+           bold=T)
+```
+
+> El **Valor Propio** de la matriz de correlaciones cuando desciende hasta 1 sugiere que el número de componentes o factores que pueden explicar la variabilidad de todo el conjunto de datos está en un $\lambda=5$ y lo corrobora el **Gráfico de Sedimentación**
+
+## Componentes Principales:
+
+En la ejecución de las componentes principales emplearemos un método de estandarización de variables respecto a su media ($\bar{x}$) y desviación estándar ($\sigma$) [@wang_comparison_2024]
+
+```{r, pca}
+pca <- prcomp(indices_fq_ddc,
+              scale=TRUE,
+              center = TRUE,
+              method = "varimax")
+summary(pca)
+```
+
+## Autovalores y varianzas:
+
+```{r, autovalores}
+get_eig(pca)
+```
+
+> Al analizar los componentes principales podemos observar que en el **Componente 5** se explica el **84%** de la varianza de todas las dimensiones
+
+## Círculo de correlaciones:
+
+```{r, circulo_correlaciones}
+fviz_pca_var(pca,
+             col.var="steelblue") + 
+  theme_minimal()
+```
+
+> En el círculo de las correlaciones es una representación gráfica de las correlaciones entre las variables originales y los componentes principales extraídos durante el análisis factorial. Cada variable original se representa como un vector en el espacio de los componentes principales, donde la longitud del vector indica la correlación entre esa variable y el componente principal correspondiente, y la dirección del vector indica la dirección en la que esa variable contribuye al componente principal. Por ejemplo, al examinar el círculo de correlaciones, podemos observar que las variables **ABI, BMWP y RIQUEZA** están inversamente correlacionadas con la Dimensión 2. Por otro lado, las variables **ANCHO y PROFUNDIDAD** muestran una correlación más fuerte con la Dimensión 1. En resumen, el círculo de correlaciones proporciona una representación visual que ayuda a entender cómo las variables originales están relacionadas y contribuyen a la estructura de los componentes principales identificados durante el análisis factorial
+
+```{r, screeplot}
+fviz_screeplot(pca,
+               ncp = 5,
+               barfill = "#3fc1c0",
+               barcolor = "#3fc1c0",
+               addlabels = TRUE,
+               ylab = "Porcentaje de varianza explicada",
+               xlab = "Dimensiones",
+               main = "Porcentaje de varianza explicada por componente (Scree plot)",
+               hjust = -0.3) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+        plot.caption = element_text(size = 8, face = "italic")) +
+  labs(caption = "Elaborado por: Marcelo Chávez") +
+  theme_minimal() +
+    theme(
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.title.x = element_text(angle = 90),
+        axis.title.y = element_text(angle = 0),
+        panel.grid = element_line(color = "#e9ecef", linewidth = 0.5),  # Cambio a linewidth
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.ticks = element_line(color = "black"),
+        axis.line = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        axis.ticks.length = unit(-0.1, "cm")
+    )
+```
+
+## Variables versus Dimensiones:
+
+```{r, variables_dimensiones}
+fviz_pca_var(pca,
+             col.var="contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+```
+
+> Es fundamental examinar el nivel de contribución de las variables a cada uno de los componentes principales. En este sentido, observamos que variables como **ABI, BMWP y RIQUEZA** destacan por su significativa contribución a la **Dimensión 2**. Sin embargo, al considerar **OXÍGENO y PH**, a pesar de ubicarse en los mismos componentes, la longitud de sus vectores indica una contribución mínima al modelo factorial en construcción.
+
+## Biplot (variables versus las estaciones de monitoreo)
+
+```{r, biplot}
+# Biplot of individuals and variables
+fviz_pca_biplot(pca, repel = TRUE)
+```
+
+> Variables ecológicas como **ABI, BMWP y RIQUEZA** exhiben una alta similitud en la estación de monitoreo 8 durante el año 1995. De manera similar: **CONDUCTIVIDAD, DIVERSIDAD e IBF** comparten características destacadas en las estaciones de monitoreo 7 y 11, también en el año 1995. Por otro lado, un conjunto distinto de variables como: **ANCHO, PROFUNDIDAD y DESCARGA** para el año 2021, evidencian patrones similares en las estaciones de monitoreo 1, 7, 8 y 9. Sin embargo, variables como: **ABUNDANCIA, TEMPERATURA y VELOCIDAD**, a pesar de su comportamiento de no similaridad entre ellas, aportan de forma significativa al modelo factorial individualmente
+
+# Índice Multivariante:
+
+Para la construcción de un **Índice Multivariante** utilizando el método factorial por componentes principales, vamos a basarnos en la utilización de las cargas factoriales o loadings que son los vectores propios resulantes de la rotación de máxima varianza en las 5 componentes donde se explica el 84% de variabilidad de los datos, considerando dos directrices técnicas importantes:
+
+1.  Evaluaremos el valor absoluto de las cargas factoriales o loadings
+2.  Seleccionaremos, para cada variable y componente, la contribución más alta (máximo 5 componentes)
+
+```{r, indice}
+round(abs((pca$rotation * (pca$rotation > -0.1))[, 1:5]), 2)
+```
+
+Por consiguiente, la ecuación de las combinaciones lineales para la matriz de variables físico-químicos y ecológicos es la siguiente:
+
+$$X_{1} = a_{11}F_{1} + a_{12}F2 + ... + a_{1q}F_{q} + d_{1}U_{1}$$ $$X_{2} = a_{21}F_{1} + a_{22}F2 + ... + a_{2q}F_{q} + d_{2}U_{2}$$ $$...............................................................$$ $$X_{2} = a_{p1}F_{1} + a_{p2}F2 + ... + a_{pq}F_{q} + d_{p}U_{p}$$
+
+**Donde:**
+
+-   $a_{ij}$: Saturaciones, están en la matriz factorial
+-   Las componentes que puedo obtener de un ACP es igual al $p$ número de variables
+-   $d^2_i$: Es la contribución del factor único (**unicidad**). Están en la diagonal de la Matriz de Covarianzas Anti-imagen
+-   Las **Comunalidades** son $h^2_i=a^2_{i1}+...+a^2_{iq}$ y están en la diagonal de la matriz reproducida
+
+#### **Ecuación teórica del IMCM:**
+
+$$I_{mcm} = ANCHO_{\text{PC}2} +\\ PROFUNDIDAD_{\text{PC}2} +\\ VELOCIDAD_{\text{PC}1} +\\ DESCARGA_{\text{PC}1} +\\ PH_{\text{PC}2} +\\ TEMPERATURA_{\text{PC}4} +\\ OXIGENO\_DISUELTO_{\text{PC}5} +\\ CONDUCTIVIDAD_{\text{PC}2} +\\ RIQUEZA_{\text{PC}2} +\\ ABUNDANCIA_{\text{PC}5} +\\ DIVERSIDAD_{\text{PC}2} +\\ ABI_{\text{PC}3} +\\ BMWP_{\text{PC}2} +\\ IBF_{\text{PC}2}$$
+
+#### **Ecuación de cálculo del Índice Multidimensional de las Comunidades de Macroinvertebrados (IMCM):**
+
+$$I_{mcm} = 0.32 \times ANCHO_{\text{PC}2} +\\ 0.43 \times PROFUNDIDAD_{\text{PC}2} +\\ 0.28 \times VELOCIDAD_{\text{PC}1} +\\ 0.31 \times DESCARGA_{\text{PC}1} +\\ 0.02 \times PH_{\text{PC}5} +\\ 0.34 \times TEMPERATURA_{\text{PC}4} +\\ 0.11 \times OXIGENO\_DISUELTO_{\text{PC}3} +\\ 0.30 \times CONDUCTIVIDAD_{\text{PC}5} +\\ 0.02 \times RIQUEZA_{\text{PC}2} +\\ 0.30 \times ABUNDANCIA_{\text{PC}5} +\\ 0.08 \times DIVERSIDAD_{\text{PC}2} +\\ 0.09 \times ABI_{\text{PC}4} +\\ 0.07 \times BMWP_{\text{PC}2} +\\ 0.45 \times IBF_{\text{PC}2}$$
+
+```{r, construccion_indice}
+
+# Función de escalamiento entre 0 y 1
+scale_values <- function(x) {
+  round((x - min(x)) / (max(x) - min(x)),2)
+}
+
+indices_mcm <- indices_fq_ddc %>%
+  mutate(
+    INDICE = round(
+      0.32 * ANCHO +
+      0.43 * PROFUNDIDAD +
+      0.28 * VELOCIDAD +
+      0.31 * DESCARGA +
+      0.02 * PH +
+      0.34 * TEMPERATURA +
+      0.11 * OXIGENO_DISUELTO +
+      0.30 * CONDUCTIVIDAD +
+      0.02 * RIQUEZA +
+      0.30 * ABUNDANCIA +
+      0.08 * DIVERSIDAD +
+      0.09 * ABI +
+      0.07 * BMWP +
+      0.45 * IBF, 2),
+    IMCM =  scale_values(INDICE),
+    RIOS = row.names(indices_fq_ddc)) %>% 
+  arrange(desc(IMCM))
+
+# Categorización del I_MCM con etiquetas personalizadas
+indices_mcm$IMCM_CATEGORIA <- cut(indices_mcm$IMCM,
+                                  breaks = c(-Inf, 
+                                             0.29,
+                                             0.30,
+                                             0.49,
+                                             0.62,
+                                             Inf),  # Definición de intervalos
+                                  labels = c("IMCM Bajo",
+                                             "IMCM Bajo",
+                                             "IMCM Medio", 
+                                             "IMCM Medio", 
+                                             "IMCM Alto"),
+                                  right = FALSE)
+
+# Filtrar IMCM del año 1995 en los rownames
+indices_mcm_95 <- indices_mcm[grep("95", rownames(indices_mcm)),]
+
+# Filtrar IMCM del año 2021 en los rownames
+indices_mcm_21 <- indices_mcm[grep("21", rownames(indices_mcm)),]
+
+DT::datatable(indices_mcm,
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla: ', htmltools::em('Variables Físico-Químicas y Ecológicas de los años 1995 y 2021 con el cálculo del Índice Multidimensional de las Comunidades de Macroinvertebrados (IMCM)')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = TRUE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel'),
+    deferRender = TRUE,
+    scrollY = 500,
+    scroller = TRUE))
+```
+
+## IMCM para los años 1995 y 2021:
+
+```{r, barplot_95_21, fig.height=12, fig.width=10}
+highchart() %>%
+    hc_chart(type = "column",
+             options3d = list(enabled = TRUE, 
+                              beta = 15,
+                              alpha = 15)) %>%  # Tipo de gráfico: columnas
+    hc_xAxis(categories = indices_mcm$RIOS) %>%  # Especificar las categorías en el eje X
+    hc_add_series(data = indices_mcm$IMCM, 
+                  color = "#6096ba") %>% 
+    hc_xAxis(labels = list(rotation = -45,
+                           align = "right"),
+             margin = 100) %>%
+    hc_title(text = "Índice Multidimensional de las Comunidades de Macroinvertebrados por Estaciones de Monitoreo en los años 1995 y 2021") %>%
+    hc_caption(text = "Elaborado por: Marcelo Chávez") %>%
+    hc_legend(enabled = FALSE) %>%
+    hc_tooltip(formatter = JS("function() {
+                             return '<b>RÍO: </b>' + this.x + '<br/>' +
+                                    '<b>IMCM: </b>' + this.y.toFixed(2);}")) %>%
+    hc_add_theme(hc_theme_google())
+```
+
+## IMCM en el año 1995:
+
+```{r, barplot_95, fig.height=12, fig.width=10}
+highchart() %>%
+    hc_chart(type = "column",
+             options3d = list(enabled = TRUE, 
+                              beta = 15,
+                              alpha = 15)) %>%  # Tipo de gráfico: columnas
+    hc_xAxis(categories = indices_mcm_95$RIOS) %>%  # Especificar las categorías en el eje X
+    hc_add_series(data = indices_mcm_95$IMCM, 
+                  color = "#6096ba") %>% 
+    hc_xAxis(labels = list(rotation = -45,
+                           align = "right"),
+             margin = 100) %>%
+    hc_title(text = "Índice Multidimensional de las Comunidades de Macroinvertebrados por Estaciones de Monitoreo en el año 1995") %>%
+    hc_caption(text = "Elaborado por: Marcelo Chávez") %>%
+    hc_legend(enabled = FALSE) %>%
+    hc_tooltip(formatter = JS("function() {
+                             return '<b>RÍO: </b>' + this.x + '<br/>' +
+                                    '<b>IMCM: </b>' + this.y.toFixed(2);}")) %>%
+    hc_add_theme(hc_theme_google())
+```
+
+## IMCM en el año 2021:
+
+```{r, barplot_21, fig.height=12, fig.width=10}
+highchart() %>%
+    hc_chart(type = "column",
+             options3d = list(enabled = TRUE, 
+                              beta = 15,
+                              alpha = 15)) %>%  # Tipo de gráfico: columnas
+    hc_xAxis(categories = indices_mcm_21$RIOS) %>%  # Especificar las categorías en el eje X
+    hc_add_series(data = indices_mcm_21$IMCM, 
+                  color = "#6096ba") %>% 
+    hc_xAxis(labels = list(rotation = -45,
+                           align = "right"),
+             margin = 100) %>%
+    hc_title(text = "Índice Multidimensional de las Comunidades de Macroinvertebrados por Estaciones de Monitoreo en el año 2021") %>%
+    hc_caption(text = "Elaborado por: Marcelo Chávez") %>%
+    hc_legend(enabled = FALSE) %>%
+    hc_tooltip(formatter = JS("function() {
+                             return '<b>RÍO: </b>' + this.x + '<br/>' +
+                                    '<b>IMCM: </b>' + this.y.toFixed(2);}")) %>%
+    hc_add_theme(hc_theme_google())
+```
+
+# Clústering de las estaciones de monitoreo (Ríos):
+
+Para los clusterización de las estaciones de monitoreo se empleará un método **No Paramétrico** que se encuentra dentro de los métodos de **Aprendizaje No Supervisado**, esto dado porque no se está utilizando una variable en específico que nos permita clasificar para entrenar un modelo factorial.
+
+En el proceso de cluster para las estaciones de monitoreo, se utiliza la misma estructura matricial de los índices físico-químicos y ecológicos. Por consiguiente se utiliza el siguiente proceso algorítmico:
+
+1.  Definición del número óptimo de clústers
+2.  Algoritmo K-Means
+
+## Escalamiento de la matriz de datos y elección del número óptimo de clústers:
+
+```{r, algoritmo_kmeans}
+var_scale <- as.data.frame(lapply(indices_fq_ddc, function(x) if(is.numeric(x)) scale(x) else x))
+
+algoritmo <- kmeans(var_scale,
+             centers = 4,
+             algorithm = "Hartigan-Wong",
+             iter.max = 100) #se cambia center por el numero de cluster
+```
+
+## Método del codo:
+
+```{r, }
+fviz_nbclust(var_scale,
+             kmeans, 
+             method = "wss") +
+  labs(subtitle = "Elbow Method") +
+  geom_vline(xintercept = 4)
+```
+
+## Conformación de clústers:
+
+```{r}
+fviz_cluster(algoritmo,
+             data = var_scale) +
+    theme_minimal() +
+    labs(
+        title = "Clústers de las Estaciones de Monitoreo",
+        caption = "Elaborado por: Marcelo Chávez") +
+    theme_minimal() +
+    theme(
+        axis.text.x = element_text(angle = 0,
+                                   vjust = 0.5,
+                                   hjust = 0.5),
+        axis.title.x = element_text(angle = 0),
+        axis.title.y = element_text(angle = 0),
+        panel.grid = element_line(color = "#e9ecef", linewidth = 0.5),  # Cambio a linewidth
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.ticks = element_line(color = "black"),
+        axis.line = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0),
+        axis.ticks.length = unit(-0.1, "cm"))
+```
+
+## Tabla final:
+
+```{r}
+indices_mcm <- indices_mcm %>%
+  mutate(CLUSTER = as.factor(algoritmo$cluster))
+
+DT::datatable(indices_mcm,
+              class = 'cell-border stripe',
+              # filter = 'top',
+              caption = htmltools::tags$caption(
+              style = 'caption-side: bottom; text-align: left;',
+              'Tabla 3: ', htmltools::em('Indicadores Físico-Químicos y Ecológicos para los años 1995 y 2021 con el cálculo del Índice Multidimensional de las Comunidades de Macroinvertebrados (IMCM) y el número de clúster que corresponde')),
+              extensions = c('Buttons','Scroller'),
+              options = list(scrollX = TRUE,
+                             initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#003566', 'color': '#fff'});",
+    "}"),
+    dom = 'Bfrtip',
+    buttons = c('excel'),
+    deferRender = TRUE,
+    scrollY = 500,
+    scroller = TRUE))
+```
